@@ -4,7 +4,7 @@
 # Example:
 # <this.sh> /path/to/repo1 /path/to/repo2
 
-RESOLUTION="1600x1080"
+RESOLUTION="1920x1080"  # Increased to full HD
 outfile="gource.mp4"
 
 # Check if any arguments were provided
@@ -16,6 +16,9 @@ fi
 
 i=0
 for repo in "$@"; do
+    # Convert to absolute path
+    repo=$(realpath "$repo")
+    
     # Check if directory exists and is a git repository
     if [ ! -d "$repo" ]; then
         echo "Error: Directory '$repo' does not exist"
@@ -33,7 +36,8 @@ for repo in "$@"; do
     
     # 2. Add repository name to the log entries
     # Using a simpler sed pattern that works on both BSD and GNU sed
-    sed -i '' "s#|#|${repo}#" "${logfile}"
+    # Add a space after the repository name to separate it from the username
+    sed -i '' "s#|#| $(basename "$repo") #" "${logfile}"
     
     logs[$i]=$logfile
     let i=$i+1
@@ -53,6 +57,16 @@ echo "Committers:"
 cat "$combined_log" | awk -F\| '{print $2}' | sort | uniq
 echo "======================"
 
+# Calculate total lines changed - ensure we're only summing numeric values
+total_lines=$(cat "$combined_log" | awk -F\| '{if($4 ~ /^[0-9]+$/) sum += $4} END {print sum}')
+echo "Total lines changed: $total_lines"
+echo "======================"
+
+# Calculate max lines changed for scaling - ensure we're only comparing numeric values
+max_lines=$(cat "$combined_log" | awk -F\| '{if($4 ~ /^[0-9]+$/ && $4 > max) max = $4} END {print max}')
+echo "Maximum lines changed in a single commit: $max_lines"
+echo "======================"
+
 time gource "$combined_log" \
     -s 0.4 \
     -i 0 \
@@ -63,6 +77,18 @@ time gource "$combined_log" \
     --hide mouse,filenames \
     --key \
     --stop-at-end \
+    --background-colour 000000 \
+    --font-size 18 \
+    --font-colour FFFFFF \
+    --title "Multiple Repository History (Total Lines: $total_lines)" \
+    --user-scale 1.5 \
+    --file-idle-time 0 \
+    --max-files 0 \
+    --multi-sampling \
+    --disable-progress \
+    --disable-bloom \
+    --bloom-multiplier 0.7 \
+    --bloom-intensity 0.7 \
     --output-ppm-stream - | ffmpeg -y -r 60 -f image2pipe -vcodec ppm -i - \
     -vcodec libx264 -preset ultrafast -pix_fmt yuv420p -crf 1 "$outfile"
 
